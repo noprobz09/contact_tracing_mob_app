@@ -1,5 +1,5 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:barcode_scan/barcode_scan.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,11 +11,18 @@ class ScanScreen extends StatefulWidget {
 }
 
 class _ScanState extends State<ScanScreen> {
-  String barcode = "";
+  String _barcode = '';
+  String _locationSelected;
+  bool _isLocationSelected = false;
+  List locations = List(); //edited line
 
+  final String url = "http://192.168.254.123:8000/api";
+
+  
   @override
   initState() {
     super.initState();
+    this.getLocations();
   }
 
   @override
@@ -31,23 +38,60 @@ class _ScanState extends State<ScanScreen> {
             children: <Widget>[
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                child: RaisedButton(
-                    color: Colors.blue,
-                    textColor: Colors.white,
-                    splashColor: Colors.blueGrey,
-                    onPressed: scan,
-                    child: const Text('START CAMERA SCAN')
+                child: new DropdownButton(
+                  isExpanded: true,
+                  items: locations.map((item) {
+                    return new DropdownMenuItem(
+                      child: new Text(item['name']),
+                      value: item['id'].toString(),
+                    );
+                  }).toList(),
+                  onChanged: (newVal) {
+                    if (newVal != '') {
+                      setState(() {
+                        _locationSelected = newVal;
+                        _isLocationSelected = true;
+                      });
+                    }
+                  },
+                  value: _locationSelected,
+                  isDense: true,
+                  hint: new Text("Select Location", textAlign: TextAlign.center),
                 ),
               )
               ,
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                child: Text(barcode, textAlign: TextAlign.center,),
+                child: (_isLocationSelected)  ? RaisedButton(
+                    color: Colors.blue,
+                    textColor: Colors.white,
+                    splashColor: Colors.blueGrey,
+                    onPressed: scan,
+                    child: const Text('START CAMERA SCAN')
+                ) : const Text('Select location to enable camera scan.'),
+              )
+              ,
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Text(_barcode, textAlign: TextAlign.center,),
               )
               ,
             ],
           ),
         ));
+  }
+
+  Future getLocations() async {
+    var res = await http.get(url + '/location/get', headers: {"Accept": "application/json"});
+    var locationsRes = json.decode(res.body);
+    
+    // print('locationRes length');
+    // print(locationsRes.length);
+    if (locationsRes.length > 0) {
+      setState(() {
+        locations = locationsRes['data']  ?? null;
+      });
+    }
   }
 
   Future scan() async {
@@ -57,21 +101,11 @@ class _ScanState extends State<ScanScreen> {
      
       if(result.type == ResultType.Barcode) {
         print(result.rawContent);
-        setState(() => this.barcode = result.rawContent);
+        setState(() => this._barcode = result.rawContent);
         var splitString = result.rawContent.split(':');
         print(splitString);
         if (splitString != null && splitString[0] != null) {
-          // perform parsing data to api
-          // final http.Response httpSend = await http.get('http://192.168.254.123:8000/api/log/create?user_id=' + splitString[0])
-          // .then((response) {
-          //   if (response.data.result == false) {
-          //     print('user id not found!');
-          //   } else {
-          //     print('user id log added.');
-          //   }
-          // })
-
-          final httpResponse = await http.get('http://192.168.254.123:8000/api/log/create?user_id=' + splitString[0]);
+          final httpResponse = await http.get(url + '/log/create?user_id=' + splitString[0] + '&location_id=' + _locationSelected);
 
           if (httpResponse.statusCode == 200) {
             // If the server did return a 200 OK response,
@@ -88,15 +122,15 @@ class _ScanState extends State<ScanScreen> {
     } on PlatformException catch (e) {
       if (e.code == BarcodeScanner.cameraAccessDenied) {
         setState(() {
-          this.barcode = 'The user did not grant the camera permission!';
+          this._barcode = 'The user did not grant the camera permission!';
         });
       } else {
-        setState(() => this.barcode = 'Unknown error: $e');
+        setState(() => this._barcode = 'Unknown error: $e');
       }
     } on FormatException{
-      setState(() => this.barcode = 'null (User returned using the "back"-button before scanning anything. Result)');
+      setState(() => this._barcode = 'null (User returned using the "back"-button before scanning anything. Result)');
     } catch (e) {
-      setState(() => this.barcode = 'Unknown error: $e');
+      setState(() => this._barcode = 'Unknown error: $e');
     }
   }
 }
